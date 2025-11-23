@@ -1,83 +1,78 @@
 from bs4 import BeautifulSoup
-import sys
 
-def main():
-    print("🎯 Парсер торгов запущен!")
+with open("page.html", "r", encoding="utf-8") as file:
+    soup = BeautifulSoup(file.read(), 'html.parser')
+
+print("Парсинг лотов...")
+
+lots = []
+
+# Ищем все элементы с ценами
+for price_elem in soup.find_all(string=lambda text: text and 'руб.' in text):
+    # Находим родительскую строку таблицы
+    row = price_elem.find_parent('tr')
     
-    try:
-        # Читаем файл
-        with open('page.html', 'r', encoding='utf-8') as file:
-            html_content = file.read()
+    if row:
+        cells = row.find_all('td')
         
-        print(f" Файл прочитан: {len(html_content)} символов")
-        
-        # Парсим HTML
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # Ищем все контейнеры с лотами
-        lot_containers = soup.find_all('div', class_='lot-item')
-        print(f"🔍 Найдено контейнеров: {len(lot_containers)}")
-        
-        lots = []
-        
-        for container in lot_containers:
-            # Название
-            name_tag = container.find('a', class_='lot-title')
-            name = name_tag.get_text(strip=True) if name_tag else 'Без названия'
-            
-            # Цена
-            price_tag = container.find('div', class_='lot-price')
-            price_text = price_tag.get_text(strip=True) if price_tag else '0'
-            
-            # Очищаем цену
-            price_clean = price_text.replace(' ', '').replace('₽', '').replace(',', '.')
+        if len(cells) >= 4:
             try:
-                price = float(price_clean)
-            except ValueError:
-                price = 0.0
-            
-            # Ссылка
-            link_tag = container.find('a', class_='lot-title')
-            relative_link = link_tag.get('href') if link_tag else '#'
-            link = f"https://torgi.gov.ru{relative_link}" if relative_link.startswith('/') else relative_link
-            
-            lots.append({
-                'name': name,
-                'price': price,
-                'link': link
-            })
-            
-            print(f" Лот: {name} - {price:,.0f} руб.")
-        
-        # Сортируем
-        sorted_lots = sorted(lots, key=lambda x: x['price'], reverse=True)
-        
-        print(f"\n📊 ВСЕГО ЛОТОВ: {len(sorted_lots)}")
-        print("🏆 ТОП-3 самых дорогих:")
-        for i, lot in enumerate(sorted_lots[:3], 1):
-            print(f"  {i}. {lot['name']} - {lot['price']:,.0f} руб.")
-        
-        # Фильтрация
-        print("\n ФИЛЬТР ПО ЦЕНЕ")
-        try:
-            min_price = float(input("Введите МИНИМАЛЬНУЮ цену: "))
-            max_price = float(input("Введите МАКСИМАЛЬНУЮ цену: "))
-            
-            filtered = [lot for lot in sorted_lots if min_price <= lot['price'] <= max_price]
-            
-            print(f"\n✅ Найдено {len(filtered)} лотов в диапазоне {min_price:,.0f} - {max_price:,.0f} руб.:")
-            for i, lot in enumerate(filtered, 1):
-                print(f"  {i}. {lot['name']} - {lot['price']:,.0f} руб.")
+                # НАЗВАНИЕ - из текста ссылки
+                link_tag = row.find('a')
+                if link_tag and link_tag.text.strip():
+                    name = link_tag.text.strip()
+                else:
+                    name = "Неизвестный лот"
                 
-        except ValueError:
-            print("❌ Ошибка! Вводите только числа.")
-            
-    except FileNotFoundError:
-        print("❌ ОШИБКА: Файл page.html не найден!")
-        print(" Убедитесь что файл находится в той же папке")
-    except Exception as e:
-        print(f"❌ ОШИБКА: {e}")
+                # Цена
+                price_text = price_elem.strip()
+                price = float(price_text.replace(' руб.', '').replace(' ', '').replace(',', '.'))
+                
+                # Ссылка
+                link = link_tag['href'] if link_tag and link_tag.get('href') else "Нет ссылки"
+                if link.startswith('/') or link.startswith('?'):
+                    link = "https://torgi.org/" + link
+                
+                lots.append({'name': name, 'price': price, 'link': link})
+                print(f"Найден: {name[:50]}... - {price:,.0f} руб.")
+                
+            except Exception as e:
+                continue
 
-if __name__ == "__main__":
-    main()
-    print("\n✨ Программа завершена")
+print(f"\nНайдено лотов: {len(lots)}")
+
+if lots:
+    # Сортировка от дорогого к дешёвому
+    lots.sort(key=lambda x: x['price'], reverse=True)
+    
+    # Вывод всех лотов
+    print("\n" + "="*50)
+    print("ВСЕ ЛОТЫ (от самого дорогого к самому дешёвому):")
+    print("="*50)
+    for i, lot in enumerate(lots, 1):
+        print(f"{i}. {lot['name']}")
+        print(f"   Цена: {lot['price']:,.2f} руб.")
+        print(f"   Ссылка: {lot['link']}\n")
+    
+    # Фильтрация по цене
+    print("="*50)
+    print("ФИЛЬТРАЦИЯ ПО ЦЕНЕ")
+    print("="*50)
+    try:
+        min_price = float(input("Введите минимальную цену: ") or 0)
+        max_price = float(input("Введите максимальную цену: ") or 999999999)
+        
+        filtered_lots = [lot for lot in lots if min_price <= lot['price'] <= max_price]
+        
+        print(f"\nНайдено лотов в диапазоне {min_price:,.2f} - {max_price:,.2f} руб.: {len(filtered_lots)}")
+        print("-" * 50)
+        
+        for i, lot in enumerate(filtered_lots, 1):
+            print(f"{i}. {lot['name']}")
+            print(f"   Цена: {lot['price']:,.2f} руб.")
+            print(f"   Ссылка: {lot['link']}\n")
+            
+    except ValueError:
+        print("Ошибка ввода цены!")
+else:
+    print("Лоты не найдены")
